@@ -1,350 +1,289 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, ListMusic, Search, X, AlignLeft, Globe } from 'lucide-react';
+import React, { useReducer, useRef, useMemo, useEffect } from "react";
+import { ListMusic, Globe, AlignLeft } from "react-icons/fa";
 
-const languages = [
-  { code: 'ko', name: '한국어' },
-  { code: 'en', name: 'English' },
-  { code: 'ja', name: '日本語' },
-  { code: 'zh', name: '中文' }
-];
-
-const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-
-const formatTime = (time) => {
-  const minutes = Math.floor(time / 60);
-  const seconds = Math.floor(time % 60);
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+const translations = {
+  en: {
+    episodes: "View Episodes",
+    language: "Change Language",
+    transcript: "View Transcript",
+    search: "Search Episodes...",
+    noResults: "No results found.",
+  },
+  ko: {
+    episodes: "에피소드 보기",
+    language: "언어 변경",
+    transcript: "스크립트 보기",
+    search: "에피소드 검색...",
+    noResults: "검색 결과가 없습니다.",
+  },
 };
 
-const episodes = [
-  {
-    id: 1,
-    title: "미래 기술 컨퍼런스",
-    episode: "EP.123 - AI와 인류의 미래",
-    image: "/api/placeholder/300/300",
-    duration: "32:15",
-    date: "2024.12.02",
-    description: "AI 기술의 발전이 인류의 미래에 미칠 영향에 대한 강연",
-    audioUrls: {
-      ko: "https://example.com/lecture1-ko.mp3",
-      en: "https://example.com/lecture1-en.mp3",
-      ja: "https://example.com/lecture1-ja.mp3",
-      zh: "https://example.com/lecture1-zh.mp3"
-    },
-    transcripts: {
-      ko: [
-        { timeInSeconds: 0, text: "안녕하세요, 오늘은 AI 기술의 발전이 가져올 변화에 대해 이야기해보겠습니다." },
-        { timeInSeconds: 15, text: "현재 AI 기술은 놀라운 속도로 발전하고 있습니다..." }
-      ],
-      en: [
-        { timeInSeconds: 0, text: "Hello, today we'll discuss the changes that AI technology development will bring." },
-        { timeInSeconds: 15, text: "Currently, AI technology is developing at an amazing pace..." }
-      ],
-      ja: [
-        { timeInSeconds: 0, text: "こんにちは、今日はAI技術の発展がもたらす変化についてお話しします。" },
-        { timeInSeconds: 15, text: "現在、AI技術は驚くべき速さで発展しています..." }
-      ],
-      zh: [
-        { timeInSeconds: 0, text: "大家好，今天我们将讨论人工智能技术发展带来的变化。" },
-        { timeInSeconds: 15, text: "目前，人工智能技术正在以惊人的速度发展..." }
-      ]
-    }
-  }
-];
-
-export default function LecturePlayer() {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [viewState, setViewState] = useState({
+const initialState = {
+  episodes: [],
+  currentEpisode: null,
+  currentTime: 0,
+  currentLanguage: "en",
+  playbackRate: 1,
+  isPlaying: false,
+  isLoading: false,
+  searchTerm: "",
+  viewState: {
     episodes: false,
-    transcript: false,
     languageMenu: false,
+    transcript: false,
     speedMenu: false,
+  },
+  currentTranscriptIndex: -1,
+};
+
+const reducer = (state, action) => {
+  switch (action.type) {
+    case "SET_EPISODES":
+      return { ...state, episodes: action.episodes };
+    case "SET_CURRENT_EPISODE":
+      return {
+        ...state,
+        currentEpisode: action.episode,
+        isPlaying: false,
+        currentTime: 0,
+        viewState: { ...state.viewState, episodes: false },
+      };
+    case "SET_CURRENT_LANGUAGE":
+      return { ...state, currentLanguage: action.language };
+    case "SET_PLAYBACK_RATE":
+      return { ...state, playbackRate: action.rate };
+    case "TOGGLE_PLAY":
+      return { ...state, isPlaying: !state.isPlaying };
+    case "TOGGLE_VIEW_STATE":
+      return {
+        ...state,
+        viewState: { ...state.viewState, [action.view]: !state.viewState[action.view] },
+      };
+    case "SET_CURRENT_TIME":
+      return { ...state, currentTime: action.time };
+    case "SET_SEARCH_TERM":
+      return { ...state, searchTerm: action.term };
+    case "SET_LOADING":
+      return { ...state, isLoading: action.loading };
+    case "SET_TRANSCRIPT_INDEX":
+      return { ...state, currentTranscriptIndex: action.index };
+    default:
+      return state;
+  }
+};
+
+const EpisodeList = ({ episodes, currentEpisode, searchTerm, onSelect, language }) => {
+  const filteredEpisodes = useMemo(
+    () =>
+      episodes.filter(
+        (episode) =>
+          episode.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          episode.description.toLowerCase().includes(searchTerm.toLowerCase())
+      ),
+    [episodes, searchTerm]
+  );
+
+  return (
+    <div className="mt-4 border-t pt-4">
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder={translations[language].search}
+          value={searchTerm}
+          onChange={(e) => onSelect(e.target.value)}
+          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring"
+        />
+      </div>
+      <div className="max-h-64 overflow-y-auto">
+        {filteredEpisodes.length > 0 ? (
+          filteredEpisodes.map((episode) => (
+            <div
+              key={episode.id}
+              className={`p-4 ${
+                currentEpisode?.id === episode.id ? "bg-blue-50" : ""
+              } hover:bg-gray-100 cursor-pointer`}
+              onClick={() => onSelect(episode)}
+            >
+              <h3 className="font-semibold">{episode.episode}</h3>
+              <p className="text-sm text-gray-500">{episode.description}</p>
+            </div>
+          ))
+        ) : (
+          <p className="text-center text-gray-500">
+            {translations[language].noResults}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Transcript = ({ transcripts, currentIndex, onClick }) => {
+  return (
+    <div className="mt-4 border-t pt-4 max-h-48 overflow-y-auto">
+      {transcripts.map((item, index) => (
+        <div
+          key={index}
+          className={`p-2 rounded cursor-pointer mb-2 ${
+            currentIndex === index ? "bg-blue-50" : "hover:bg-gray-50"
+          }`}
+          onClick={() => onClick(item.timeInSeconds)}
+        >
+          {item.text}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const Player = ({ episodes }) => {
+  const [state, dispatch] = useReducer(reducer, {
+    ...initialState,
+    episodes,
+    currentEpisode: episodes[0],
   });
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentLanguage, setCurrentLanguage] = useState('ko');
-  const [currentTranscriptIndex, setCurrentTranscriptIndex] = useState(0);
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [currentEpisode, setCurrentEpisode] = useState(episodes[0]);
 
   const audioRef = useRef(null);
   const transcriptRefs = useRef([]);
 
-  const toggleViewState = (key) => {
-    setViewState(prev => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+  const updateAudioSource = (src, currentTime, playbackRate, play) => {
+    if (audioRef.current) {
+      audioRef.current.src = src;
+      audioRef.current.currentTime = currentTime;
+      audioRef.current.playbackRate = playbackRate;
+      if (play) {
+        audioRef.current.play();
+      }
+    }
   };
 
   const handleEpisodeSelect = (episode) => {
-    setCurrentEpisode(episode);
-    setIsPlaying(false);
-    setCurrentTime(0);
-    setViewState(prev => ({ ...prev, episodes: false }));
-    if (audioRef.current) {
-      audioRef.current.src = episode.audioUrls[currentLanguage];
-      audioRef.current.currentTime = 0;
-      audioRef.current.playbackRate = playbackRate;
-    }
+    dispatch({ type: "SET_CURRENT_EPISODE", episode });
+    updateAudioSource(episode.audioUrls[state.currentLanguage], 0, state.playbackRate, false);
   };
 
   const handleLanguageChange = (langCode) => {
     const currentTimeValue = audioRef.current?.currentTime || 0;
     const isPlayingValue = !audioRef.current?.paused;
-    
-    setCurrentLanguage(langCode);
-    if (audioRef.current) {
-      audioRef.current.src = currentEpisode.audioUrls[langCode];
-      audioRef.current.currentTime = currentTimeValue;
-      audioRef.current.playbackRate = playbackRate;
-      if (isPlayingValue) {
-        audioRef.current.play().catch(console.error);
-      }
-    }
-    toggleViewState('languageMenu');
-  };
-
-  const handlePlaybackRateChange = (rate) => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = rate;
-      setPlaybackRate(rate);
-      toggleViewState('speedMenu');
-    }
+    dispatch({ type: "SET_CURRENT_LANGUAGE", language: langCode });
+    updateAudioSource(state.currentEpisode.audioUrls[langCode], currentTimeValue, state.playbackRate, isPlayingValue);
+    dispatch({ type: "TOGGLE_VIEW_STATE", view: "languageMenu" });
   };
 
   const togglePlay = async () => {
-    if (!audioRef.current) return;
-
-    if (isPlaying) {
+    if (state.isPlaying) {
       audioRef.current.pause();
     } else {
       await audioRef.current.play();
     }
-    setIsPlaying(!isPlaying);
+    dispatch({ type: "TOGGLE_PLAY" });
   };
 
   useEffect(() => {
-    const newIndex = currentEpisode.transcripts[currentLanguage]?.findIndex((item, index) => {
-      const nextItem = currentEpisode.transcripts[currentLanguage][index + 1];
-      return currentTime >= item.timeInSeconds && 
-             (!nextItem || currentTime < nextItem.timeInSeconds);
-    });
-    
-    if (newIndex !== -1 && newIndex !== currentTranscriptIndex) {
-      setCurrentTranscriptIndex(newIndex);
+    const newIndex = state.currentEpisode.transcripts[state.currentLanguage]?.findIndex(
+      (item, index) => {
+        const nextItem =
+          state.currentEpisode.transcripts[state.currentLanguage][index + 1];
+        return (
+          state.currentTime >= item.timeInSeconds &&
+          (!nextItem || state.currentTime < nextItem.timeInSeconds)
+        );
+      }
+    );
+
+    if (newIndex !== -1 && newIndex !== state.currentTranscriptIndex) {
+      dispatch({ type: "SET_TRANSCRIPT_INDEX", index: newIndex });
       transcriptRefs.current[newIndex]?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
+        behavior: "smooth",
+        block: "center",
       });
     }
-  }, [currentTime, currentTranscriptIndex, currentLanguage, currentEpisode]);
+  }, [state.currentTime, state.currentTranscriptIndex, state.currentLanguage, state.currentEpisode]);
 
   return (
-    <div className="w-full max-w-md mx-auto bg-white rounded-lg shadow-lg p-4">
+    <div className="w-full max-w-md mx-auto bg-white rounded-lg shadow-lg p-4 relative">
+      {state.isLoading && (
+        <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-50">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+        </div>
+      )}
+
       <audio
         ref={audioRef}
-        src={currentEpisode.audioUrls[currentLanguage]}
-        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
-        onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
-        onEnded={() => setIsPlaying(false)}
+        src={state.currentEpisode.audioUrls[state.currentLanguage]}
+        onTimeUpdate={() =>
+          dispatch({
+            type: "SET_CURRENT_TIME",
+            time: audioRef.current?.currentTime || 0,
+          })
+        }
+        onEnded={() => dispatch({ type: "TOGGLE_PLAY" })}
       />
 
       <div className="flex justify-between items-center mb-4">
         <div className="flex space-x-2">
-          <div className="relative">
-            <button
-              className={`p-2 hover:bg-gray-100 rounded-full ${viewState.speedMenu ? 'bg-blue-100' : ''}`}
-              onClick={() => toggleViewState('speedMenu')}
-            >
-              <span className="text-sm font-medium">{playbackRate}x</span>
-            </button>
-            {viewState.speedMenu && (
-              <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg z-10">
-                {PLAYBACK_RATES.map(rate => (
-                  <button
-                    key={rate}
-                    className={`block w-full text-left px-4 py-2 hover:bg-gray-50 ${
-                      playbackRate === rate ? 'bg-blue-50' : ''
-                    }`}
-                    onClick={() => handlePlaybackRateChange(rate)}
-                  >
-                    {rate}x
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          
-          <div className="relative">
-            <button
-              className={`p-2 hover:bg-gray-100 rounded-full ${viewState.languageMenu ? 'bg-blue-100' : ''}`}
-              onClick={() => toggleViewState('languageMenu')}
-            >
-              <Globe className="w-6 h-6" />
-            </button>
-            {viewState.languageMenu && (
-              <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg z-10">
-                {languages.map(lang => (
-                  <button
-                    key={lang.code}
-                    className={`block w-full text-left px-4 py-2 hover:bg-gray-50 ${
-                      currentLanguage === lang.code ? 'bg-blue-50' : ''
-                    }`}
-                    onClick={() => handleLanguageChange(lang.code)}
-                  >
-                    {lang.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <button
+            className={`p-2 hover:bg-gray-100 rounded-full ${
+              state.viewState.episodes ? "bg-blue-100" : ""
+            }`}
+            onClick={() =>
+              dispatch({ type: "TOGGLE_VIEW_STATE", view: "episodes" })
+            }
+            aria-label={translations[state.currentLanguage].episodes}
+          >
+            <ListMusic className="w-6 h-6" />
+          </button>
+          <button
+            className={`p-2 hover:bg-gray-100 rounded-full ${
+              state.viewState.languageMenu ? "bg-blue-100" : ""
+            }`}
+            onClick={() =>
+              dispatch({ type: "TOGGLE_VIEW_STATE", view: "languageMenu" })
+            }
+            aria-label={translations[state.currentLanguage].language}
+          >
+            <Globe className="w-6 h-6" />
+          </button>
         </div>
 
         <h1 className="text-lg font-bold">강연 플레이어</h1>
 
         <div className="flex space-x-2">
           <button
-            className={`p-2 hover:bg-gray-100 rounded-full ${viewState.transcript ? 'bg-blue-100' : ''}`}
-            onClick={() => toggleViewState('transcript')}
+            className={`p-2 hover:bg-gray-100 rounded-full ${
+              state.viewState.transcript ? "bg-blue-100" : ""
+            }`}
+            onClick={() =>
+              dispatch({ type: "TOGGLE_VIEW_STATE", view: "transcript" })
+            }
+            aria-label={translations[state.currentLanguage].transcript}
           >
             <AlignLeft className="w-6 h-6" />
           </button>
-          <button
-            className={`p-2 hover:bg-gray-100 rounded-full ${viewState.episodes ? 'bg-blue-100' : ''}`}
-            onClick={() => toggleViewState('episodes')}
-          >
-            <ListMusic className="w-6 h-6" />
-          </button>
         </div>
       </div>
 
-      <div className="my-4">
-        <img 
-          src={currentEpisode.image} 
-          alt={currentEpisode.title} 
-          className="w-32 h-32 mx-auto rounded-lg"
+      {state.viewState.episodes && (
+        <EpisodeList
+          episodes={state.episodes}
+          currentEpisode={state.currentEpisode}
+          searchTerm={state.searchTerm}
+          onSelect={(term) => dispatch({ type: "SET_SEARCH_TERM", term })}
+          language={state.currentLanguage}
         />
-        <h2 className="text-xl font-bold text-center mt-2">{currentEpisode.title}</h2>
-        <p className="text-gray-600 text-center">{currentEpisode.episode}</p>
-      </div>
-
-      {viewState.transcript && (
-        <div className="mt-4 border-t pt-4">
-          <div className="max-h-48 overflow-y-auto">
-            {currentEpisode.transcripts[currentLanguage].map((item, index) => (
-              <div
-                key={index}
-                ref={el => transcriptRefs.current[index] = el}
-                className={`p-2 rounded cursor-pointer mb-2 ${
-                  currentTranscriptIndex === index ? 'bg-blue-50' : 'hover:bg-gray-50'
-                }`}
-                onClick={() => {
-                  if (audioRef.current) {
-                    audioRef.current.currentTime = item.timeInSeconds;
-                    setCurrentTime(item.timeInSeconds);
-                  }
-                }}
-              >
-                {item.text}
-              </div>
-            ))}
-          </div>
-        </div>
       )}
 
-      {viewState.episodes && (
-        <div className="mt-4 border-t pt-4">
-          <div className="mb-4">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="에피소드 검색..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-10 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
-              />
-              <Search className="w-5 h-5 absolute left-3 top-2.5 text-gray-400" />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-2.5"
-                >
-                  <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {episodes.map((episode) => (
-              <div
-                key={episode.id}
-                className={`p-4 hover:bg-gray-50 cursor-pointer ${
-                  currentEpisode.id === episode.id ? 'bg-blue-50' : ''
-                }`}
-                onClick={() => handleEpisodeSelect(episode)}
-              >
-                <div className="flex items-center">
-                  <img
-                    src={episode.image}
-                    alt={episode.title}
-                    className="w-16 h-16 rounded-lg mr-4"
-                  />
-                  <div className="flex-1">
-                    <h3 className="font-medium">{episode.episode}</h3>
-                    <p className="text-sm text-gray-600">{episode.date}</p>
-                    <p className="text-sm text-gray-500">{episode.duration}</p>
-                    <p className="text-sm text-gray-600">{episode.description}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="mt-4">
-        <input
-          type="range"
-          min="0"
-          max={duration || 0}
-          value={currentTime}
-          onChange={(e) => {
-            const time = Number(e.target.value);
-            setCurrentTime(time);
-            if (audioRef.current) {
-              audioRef.current.currentTime = time;
-            }
-          }}
-          className="w-full"
+      {state.viewState.transcript && (
+        <Transcript
+          transcripts={state.currentEpisode.transcripts[state.currentLanguage]}
+          currentIndex={state.currentTranscriptIndex}
+          onClick={(time) =>
+            dispatch({ type: "SET_CURRENT_TIME", time: time })
+          }
         />
-        <div className="flex justify-between text-sm text-gray-600">
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
-        </div>
-      </div>
-
-      <div className="flex justify-center items-center space-x-4 mt-4">
-        <button
-          className="p-2 hover:bg-gray-100 rounded-full"
-          onClick={() => audioRef.current && (audioRef.current.currentTime -= 10)}
-        >
-          <SkipBack className="w-6 h-6" />
-        </button>
-        <button
-          className="p-3 bg-blue-500 hover:bg-blue-600 text-white rounded-full"
-          onClick={togglePlay}
-        >
-          {isPlaying ? <Pause className="w-8 h-8" /> : <Play className="w-8 h-8" />}
-        </button>
-        <button
-          className="p-2 hover:bg-gray-100 rounded-full"
-          onClick={() => audioRef.current && (audioRef.current.currentTime += 10)}
-        >
-          <SkipForward className="w-6 h-6" />
-        </button>
-      </div>
+      )}
     </div>
   );
-}
+};
+
+export default Player;
