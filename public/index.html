@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Play, Pause, SkipBack, SkipForward, ListMusic, Search, X, AlignLeft, Globe } from 'lucide-react';
 
-// Language options
 const languages = [
   { code: 'ko', name: '한국어' },
   { code: 'en', name: 'English' },
@@ -9,10 +8,8 @@ const languages = [
   { code: 'zh', name: '中文' }
 ];
 
-// Playback speed options
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
-// Utility functions
 const formatTime = (time) => {
   const minutes = Math.floor(time / 60);
   const seconds = Math.floor(time % 60);
@@ -25,6 +22,9 @@ const episodes = [
     title: "미래 기술 컨퍼런스",
     episode: "EP.123 - AI와 인류의 미래",
     image: "/api/placeholder/300/300",
+    duration: "32:15",
+    date: "2024.12.02",
+    description: "AI 기술의 발전이 인류의 미래에 미칠 영향에 대한 강연",
     audioUrls: {
       ko: "https://example.com/lecture1-ko.mp3",
       en: "https://example.com/lecture1-en.mp3",
@@ -53,7 +53,6 @@ const episodes = [
 ];
 
 export default function LecturePlayer() {
-  // State
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -69,15 +68,8 @@ export default function LecturePlayer() {
   const [playbackRate, setPlaybackRate] = useState(1);
   const [currentEpisode, setCurrentEpisode] = useState(episodes[0]);
 
-  // Refs
   const audioRef = useRef(null);
   const transcriptRefs = useRef([]);
-
-  // Filtered episodes based on search term
-  const filteredEpisodes = episodes.filter(episode =>
-    episode.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    episode.episode.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   const toggleViewState = (key) => {
     setViewState(prev => ({
@@ -91,6 +83,35 @@ export default function LecturePlayer() {
     setIsPlaying(false);
     setCurrentTime(0);
     setViewState(prev => ({ ...prev, episodes: false }));
+    if (audioRef.current) {
+      audioRef.current.src = episode.audioUrls[currentLanguage];
+      audioRef.current.currentTime = 0;
+      audioRef.current.playbackRate = playbackRate;
+    }
+  };
+
+  const handleLanguageChange = (langCode) => {
+    const currentTimeValue = audioRef.current?.currentTime || 0;
+    const isPlayingValue = !audioRef.current?.paused;
+    
+    setCurrentLanguage(langCode);
+    if (audioRef.current) {
+      audioRef.current.src = currentEpisode.audioUrls[langCode];
+      audioRef.current.currentTime = currentTimeValue;
+      audioRef.current.playbackRate = playbackRate;
+      if (isPlayingValue) {
+        audioRef.current.play().catch(console.error);
+      }
+    }
+    toggleViewState('languageMenu');
+  };
+
+  const handlePlaybackRateChange = (rate) => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
+      setPlaybackRate(rate);
+      toggleViewState('speedMenu');
+    }
   };
 
   const togglePlay = async () => {
@@ -132,6 +153,64 @@ export default function LecturePlayer() {
 
       <div className="flex justify-between items-center mb-4">
         <div className="flex space-x-2">
+          <div className="relative">
+            <button
+              className={`p-2 hover:bg-gray-100 rounded-full ${viewState.speedMenu ? 'bg-blue-100' : ''}`}
+              onClick={() => toggleViewState('speedMenu')}
+            >
+              <span className="text-sm font-medium">{playbackRate}x</span>
+            </button>
+            {viewState.speedMenu && (
+              <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg z-10">
+                {PLAYBACK_RATES.map(rate => (
+                  <button
+                    key={rate}
+                    className={`block w-full text-left px-4 py-2 hover:bg-gray-50 ${
+                      playbackRate === rate ? 'bg-blue-50' : ''
+                    }`}
+                    onClick={() => handlePlaybackRateChange(rate)}
+                  >
+                    {rate}x
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <div className="relative">
+            <button
+              className={`p-2 hover:bg-gray-100 rounded-full ${viewState.languageMenu ? 'bg-blue-100' : ''}`}
+              onClick={() => toggleViewState('languageMenu')}
+            >
+              <Globe className="w-6 h-6" />
+            </button>
+            {viewState.languageMenu && (
+              <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg z-10">
+                {languages.map(lang => (
+                  <button
+                    key={lang.code}
+                    className={`block w-full text-left px-4 py-2 hover:bg-gray-50 ${
+                      currentLanguage === lang.code ? 'bg-blue-50' : ''
+                    }`}
+                    onClick={() => handleLanguageChange(lang.code)}
+                  >
+                    {lang.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <h1 className="text-lg font-bold">강연 플레이어</h1>
+
+        <div className="flex space-x-2">
+          <button
+            className={`p-2 hover:bg-gray-100 rounded-full ${viewState.transcript ? 'bg-blue-100' : ''}`}
+            onClick={() => toggleViewState('transcript')}
+          >
+            <AlignLeft className="w-6 h-6" />
+          </button>
           <button
             className={`p-2 hover:bg-gray-100 rounded-full ${viewState.episodes ? 'bg-blue-100' : ''}`}
             onClick={() => toggleViewState('episodes')}
@@ -139,38 +218,92 @@ export default function LecturePlayer() {
             <ListMusic className="w-6 h-6" />
           </button>
         </div>
-        <h1 className="text-lg font-bold">강연 플레이어</h1>
       </div>
 
-      {viewState.episodes && (
-        <div className="border-t mt-4">
-          <div className="mb-4">
-            <input
-              type="text"
-              placeholder="검색어를 입력하세요..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 border rounded"
-            />
-          </div>
-          {filteredEpisodes.length > 0 ? (
-            filteredEpisodes.map((episode) => (
+      <div className="my-4">
+        <img 
+          src={currentEpisode.image} 
+          alt={currentEpisode.title} 
+          className="w-32 h-32 mx-auto rounded-lg"
+        />
+        <h2 className="text-xl font-bold text-center mt-2">{currentEpisode.title}</h2>
+        <p className="text-gray-600 text-center">{currentEpisode.episode}</p>
+      </div>
+
+      {viewState.transcript && (
+        <div className="mt-4 border-t pt-4">
+          <div className="max-h-48 overflow-y-auto">
+            {currentEpisode.transcripts[currentLanguage].map((item, index) => (
               <div
-                key={episode.id}
-                className="p-4 hover:bg-gray-50 cursor-pointer"
-                onClick={() => handleEpisodeSelect(episode)}
+                key={index}
+                ref={el => transcriptRefs.current[index] = el}
+                className={`p-2 rounded cursor-pointer mb-2 ${
+                  currentTranscriptIndex === index ? 'bg-blue-50' : 'hover:bg-gray-50'
+                }`}
+                onClick={() => {
+                  if (audioRef.current) {
+                    audioRef.current.currentTime = item.timeInSeconds;
+                    setCurrentTime(item.timeInSeconds);
+                  }
+                }}
               >
-                <h3 className="font-bold">{episode.title}</h3>
-                <p className="text-gray-600">{episode.episode}</p>
+                {item.text}
               </div>
-            ))
-          ) : (
-            <p className="text-gray-600">검색 결과가 없습니다.</p>
-          )}
+            ))}
+          </div>
         </div>
       )}
-      
-      {/* Playback controls */}
+
+      {viewState.episodes && (
+        <div className="mt-4 border-t pt-4">
+          <div className="mb-4">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="에피소드 검색..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-10 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
+              />
+              <Search className="w-5 h-5 absolute left-3 top-2.5 text-gray-400" />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-2.5"
+                >
+                  <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {episodes.map((episode) => (
+              <div
+                key={episode.id}
+                className={`p-4 hover:bg-gray-50 cursor-pointer ${
+                  currentEpisode.id === episode.id ? 'bg-blue-50' : ''
+                }`}
+                onClick={() => handleEpisodeSelect(episode)}
+              >
+                <div className="flex items-center">
+                  <img
+                    src={episode.image}
+                    alt={episode.title}
+                    className="w-16 h-16 rounded-lg mr-4"
+                  />
+                  <div className="flex-1">
+                    <h3 className="font-medium">{episode.episode}</h3>
+                    <p className="text-sm text-gray-600">{episode.date}</p>
+                    <p className="text-sm text-gray-500">{episode.duration}</p>
+                    <p className="text-sm text-gray-600">{episode.description}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-4">
         <input
           type="range"
