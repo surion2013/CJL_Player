@@ -2,9 +2,7 @@ import React from 'react';
 
 function HelloWorld() {
   return (
-    <> 
-      Hello, World!
-    </>
+    <h1>Hello, World!</h1>  // 또는 <div>Hello, World!</div>
   );
 }
 
