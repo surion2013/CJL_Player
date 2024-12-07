@@ -1,6 +1,5 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
-import HelloWorld from './HelloWorld';
+import ReactDOM from 'react-dom';
+import App from './App';
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<HelloWorld />);
+ReactDOM.render(<App />, document.getElementById('root'));
