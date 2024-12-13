@@ -1,12 +1,289 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>React App</title>
-</head>
-<body>
-  <noscript>You need to enable JavaScript to run this app.</noscript>
-  <div id="root"></div>
-</body>
-</html>
+import React, { useReducer, useRef, useMemo, useEffect } from "react";
+import { ListMusic, Globe, AlignLeft } from "react-icons/fa";
+
+const translations = {
+  en: {
+    episodes: "View Episodes",
+    language: "Change Language",
+    transcript: "View Transcript",
+    search: "Search Episodes...",
+    noResults: "No results found.",
+  },
+  ko: {
+    episodes: "에피소드 보기",
+    language: "언어 변경",
+    transcript: "스크립트 보기",
+    search: "에피소드 검색...",
+    noResults: "검색 결과가 없습니다.",
+  },
+};
+
+const initialState = {
+  episodes: [],
+  currentEpisode: null,
+  currentTime: 0,
+  currentLanguage: "en",
+  playbackRate: 1,
+  isPlaying: false,
+  isLoading: false,
+  searchTerm: "",
+  viewState: {
+    episodes: false,
+    languageMenu: false,
+    transcript: false,
+    speedMenu: false,
+  },
+  currentTranscriptIndex: -1,
+};
+
+const reducer = (state, action) => {
+  switch (action.type) {
+    case "SET_EPISODES":
+      return { ...state, episodes: action.episodes };
+    case "SET_CURRENT_EPISODE":
+      return {
+        ...state,
+        currentEpisode: action.episode,
+        isPlaying: false,
+        currentTime: 0,
+        viewState: { ...state.viewState, episodes: false },
+      };
+    case "SET_CURRENT_LANGUAGE":
+      return { ...state, currentLanguage: action.language };
+    case "SET_PLAYBACK_RATE":
+      return { ...state, playbackRate: action.rate };
+    case "TOGGLE_PLAY":
+      return { ...state, isPlaying: !state.isPlaying };
+    case "TOGGLE_VIEW_STATE":
+      return {
+        ...state,
+        viewState: { ...state.viewState, [action.view]: !state.viewState[action.view] },
+      };
+    case "SET_CURRENT_TIME":
+      return { ...state, currentTime: action.time };
+    case "SET_SEARCH_TERM":
+      return { ...state, searchTerm: action.term };
+    case "SET_LOADING":
+      return { ...state, isLoading: action.loading };
+    case "SET_TRANSCRIPT_INDEX":
+      return { ...state, currentTranscriptIndex: action.index };
+    default:
+      return state;
+  }
+};
+
+const EpisodeList = ({ episodes, currentEpisode, searchTerm, onSelect, language }) => {
+  const filteredEpisodes = useMemo(
+    () =>
+      episodes.filter(
+        (episode) =>
+          episode.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          episode.description.toLowerCase().includes(searchTerm.toLowerCase())
+      ),
+    [episodes, searchTerm]
+  );
+
+  return (
+    <div className="mt-4 border-t pt-4">
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder={translations[language].search}
+          value={searchTerm}
+          onChange={(e) => onSelect(e.target.value)}
+          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring"
+        />
+      </div>
+      <div className="max-h-64 overflow-y-auto">
+        {filteredEpisodes.length > 0 ? (
+          filteredEpisodes.map((episode) => (
+            <div
+              key={episode.id}
+              className={`p-4 ${
+                currentEpisode?.id === episode.id ? "bg-blue-50" : ""
+              } hover:bg-gray-100 cursor-pointer`}
+              onClick={() => onSelect(episode)}
+            >
+              <h3 className="font-semibold">{episode.episode}</h3>
+              <p className="text-sm text-gray-500">{episode.description}</p>
+            </div>
+          ))
+        ) : (
+          <p className="text-center text-gray-500">
+            {translations[language].noResults}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Transcript = ({ transcripts, currentIndex, onClick }) => {
+  return (
+    <div className="mt-4 border-t pt-4 max-h-48 overflow-y-auto">
+      {transcripts.map((item, index) => (
+        <div
+          key={index}
+          className={`p-2 rounded cursor-pointer mb-2 ${
+            currentIndex === index ? "bg-blue-50" : "hover:bg-gray-50"
+          }`}
+          onClick={() => onClick(item.timeInSeconds)}
+        >
+          {item.text}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const Player = ({ episodes }) => {
+  const [state, dispatch] = useReducer(reducer, {
+    ...initialState,
+    episodes,
+    currentEpisode: episodes[0],
+  });
+
+  const audioRef = useRef(null);
+  const transcriptRefs = useRef([]);
+
+  const updateAudioSource = (src, currentTime, playbackRate, play) => {
+    if (audioRef.current) {
+      audioRef.current.src = src;
+      audioRef.current.currentTime = currentTime;
+      audioRef.current.playbackRate = playbackRate;
+      if (play) {
+        audioRef.current.play();
+      }
+    }
+  };
+
+  const handleEpisodeSelect = (episode) => {
+    dispatch({ type: "SET_CURRENT_EPISODE", episode });
+    updateAudioSource(episode.audioUrls[state.currentLanguage], 0, state.playbackRate, false);
+  };
+
+  const handleLanguageChange = (langCode) => {
+    const currentTimeValue = audioRef.current?.currentTime || 0;
+    const isPlayingValue = !audioRef.current?.paused;
+    dispatch({ type: "SET_CURRENT_LANGUAGE", language: langCode });
+    updateAudioSource(state.currentEpisode.audioUrls[langCode], currentTimeValue, state.playbackRate, isPlayingValue);
+    dispatch({ type: "TOGGLE_VIEW_STATE", view: "languageMenu" });
+  };
+
+  const togglePlay = async () => {
+    if (state.isPlaying) {
+      audioRef.current.pause();
+    } else {
+      await audioRef.current.play();
+    }
+    dispatch({ type: "TOGGLE_PLAY" });
+  };
+
+  useEffect(() => {
+    const newIndex = state.currentEpisode.transcripts[state.currentLanguage]?.findIndex(
+      (item, index) => {
+        const nextItem =
+          state.currentEpisode.transcripts[state.currentLanguage][index + 1];
+        return (
+          state.currentTime >= item.timeInSeconds &&
+          (!nextItem || state.currentTime < nextItem.timeInSeconds)
+        );
+      }
+    );
+
+    if (newIndex !== -1 && newIndex !== state.currentTranscriptIndex) {
+      dispatch({ type: "SET_TRANSCRIPT_INDEX", index: newIndex });
+      transcriptRefs.current[newIndex]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [state.currentTime, state.currentTranscriptIndex, state.currentLanguage, state.currentEpisode]);
+
+  return (
+    <div className="w-full max-w-md mx-auto bg-white rounded-lg shadow-lg p-4 relative">
+      {state.isLoading && (
+        <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-50">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+        </div>
+      )}
+
+      <audio
+        ref={audioRef}
+        src={state.currentEpisode.audioUrls[state.currentLanguage]}
+        onTimeUpdate={() =>
+          dispatch({
+            type: "SET_CURRENT_TIME",
+            time: audioRef.current?.currentTime || 0,
+          })
+        }
+        onEnded={() => dispatch({ type: "TOGGLE_PLAY" })}
+      />
+
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex space-x-2">
+          <button
+            className={`p-2 hover:bg-gray-100 rounded-full ${
+              state.viewState.episodes ? "bg-blue-100" : ""
+            }`}
+            onClick={() =>
+              dispatch({ type: "TOGGLE_VIEW_STATE", view: "episodes" })
+            }
+            aria-label={translations[state.currentLanguage].episodes}
+          >
+            <ListMusic className="w-6 h-6" />
+          </button>
+          <button
+            className={`p-2 hover:bg-gray-100 rounded-full ${
+              state.viewState.languageMenu ? "bg-blue-100" : ""
+            }`}
+            onClick={() =>
+              dispatch({ type: "TOGGLE_VIEW_STATE", view: "languageMenu" })
+            }
+            aria-label={translations[state.currentLanguage].language}
+          >
+            <Globe className="w-6 h-6" />
+          </button>
+        </div>
+
+        <h1 className="text-lg font-bold">강연 플레이어</h1>
+
+        <div className="flex space-x-2">
+          <button
+            className={`p-2 hover:bg-gray-100 rounded-full ${
+              state.viewState.transcript ? "bg-blue-100" : ""
+            }`}
+            onClick={() =>
+              dispatch({ type: "TOGGLE_VIEW_STATE", view: "transcript" })
+            }
+            aria-label={translations[state.currentLanguage].transcript}
+          >
+            <AlignLeft className="w-6 h-6" />
+          </button>
+        </div>
+      </div>
+
+      {state.viewState.episodes && (
+        <EpisodeList
+          episodes={state.episodes}
+          currentEpisode={state.currentEpisode}
+          searchTerm={state.searchTerm}
+          onSelect={(term) => dispatch({ type: "SET_SEARCH_TERM", term })}
+          language={state.currentLanguage}
+        />
+      )}
+
+      {state.viewState.transcript && (
+        <Transcript
+          transcripts={state.currentEpisode.transcripts[state.currentLanguage]}
+          currentIndex={state.currentTranscriptIndex}
+          onClick={(time) =>
+            dispatch({ type: "SET_CURRENT_TIME", time: time })
+          }
+        />
+      )}
+    </div>
+  );
+};
+
+export default Player;
